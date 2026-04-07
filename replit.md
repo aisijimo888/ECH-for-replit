@@ -32,5 +32,5 @@ node server.js
 
 Configured for autoscale deployment using:
 ```
-node server.js
+sh start.sh
 ```
