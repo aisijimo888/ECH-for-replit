@@ -1,10 +1,31 @@
-# 這是專案的說明文件，包含了完整的配置指南。
+Architecture
 
-# ⚡ ECH Tunnel + Cloudflare Argo Quick Tunnel Docker 專案
+    Runtime: Node.js 20
+    Server: Custom HTTP server (server.js) serving a single-page HTML frontend
+    Frontend: public_index.html - a complete static HTML/CSS/JS page (no build step required)
+    Port: 5000 (0.0.0.0)
 
-這個專案將 **ech-server**、**Opera Proxy**（可選）和 **Cloudflare Argo Quick Tunnel** 整合到一個輕量級的 Docker 容器中，用於快速建立一個臨時的 WSS/ECH 連線通道。
+Project Structure
 
----
+server.js           - Node.js HTTP server, serves on port 5000
+public_index.html   - Main frontend HTML (ÉLAN shoe store)
+index.html.bak      - Original backup of the frontend HTML
+Dockerfile          - Original Docker config (not used in Replit)
+Caddyfile           - Original Caddy config (not used in Replit)
+start.sh            - Original tunnel startup script (not used in Replit)
+
+Running
+
+The app runs via the "Start application" workflow using:
+
+node server.js
+
+Deployment
+
+Configured for autoscale deployment using:
+
+sh start.sh
+
 
 ## 🚀 快速開始
 
