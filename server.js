@@ -5,17 +5,6 @@ const path = require('path');
 const PORT = 5000;
 const HOST = '0.0.0.0';
 
-const MIME_TYPES = {
-    '.html': 'text/html; charset=utf-8',
-    '.js':   'application/javascript; charset=utf-8',
-    '.css':  'text/css; charset=utf-8',
-    '.json': 'application/json',
-    '.png':  'image/png',
-    '.jpg':  'image/jpeg',
-    '.svg':  'image/svg+xml',
-    '.ico':  'image/x-icon',
-};
-
 const LOADING_PAGE = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -49,51 +38,73 @@ const LOADING_PAGE = `<!DOCTYPE html>
 </body>
 </html>`;
 
-const server = http.createServer((req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
+const MIME_TYPES = {
+    '.html': 'text/html; charset=utf-8',
+    '.js':   'application/javascript; charset=utf-8',
+    '.css':  'text/css; charset=utf-8',
+    '.json': 'application/json',
+};
 
-    let urlPath = req.url.split('?')[0];
-
-    if (urlPath === '/' || urlPath === '/index.html') {
-        const tunnelPage = path.join(__dirname, 'tunnel_index.html');
-        if (fs.existsSync(tunnelPage)) {
-            serveFile(res, tunnelPage);
-        } else {
+function sendLoadingPage(res) {
+    try {
+        if (!res.headersSent) {
             res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
             res.end(LOADING_PAGE);
         }
-        return;
+    } catch (e) {
+        console.error('sendLoadingPage error:', e.message);
     }
+}
 
-    const filePath = path.join(__dirname, urlPath);
-    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+function serveFile(res, filePath) {
+    try {
+        if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+            fs.readFile(filePath, (err, data) => {
+                if (err) {
+                    sendLoadingPage(res);
+                    return;
+                }
+                const ext = path.extname(filePath);
+                const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+                res.writeHead(200, { 'Content-Type': contentType });
+                res.end(data);
+            });
+        } else {
+            sendLoadingPage(res);
+        }
+    } catch (e) {
+        sendLoadingPage(res);
+    }
+}
+
+const server = http.createServer((req, res) => {
+    try {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Cache-Control', 'no-cache');
+        
+        let urlPath = req.url.split('?')[0];
+        
+        // 根路径处理
+        if (urlPath === '/' || urlPath === '/index.html') {
+            const tunnelPage = path.join(__dirname, 'tunnel_index.html');
+            serveFile(res, tunnelPage);
+            return;
+        }
+        
+        // 其他路径：尝试作为文件，否则返回 loading 页面
+        const filePath = path.join(__dirname, urlPath);
         serveFile(res, filePath);
-        return;
-    }
-
-    const tunnelPage = path.join(__dirname, 'tunnel_index.html');
-    if (fs.existsSync(tunnelPage)) {
-        serveFile(res, tunnelPage);
-    } else {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(LOADING_PAGE);
+        
+    } catch (err) {
+        console.error('Request error:', err.message);
+        sendLoadingPage(res);
     }
 });
 
-function serveFile(res, filePath) {
-    fs.readFile(filePath, (err, data) => {
-        if (err) {
-            res.writeHead(404, { 'Content-Type': 'text/plain' });
-            res.end('Not Found');
-            return;
-        }
-        const ext = path.extname(filePath);
-        const contentType = MIME_TYPES[ext] || 'application/octet-stream';
-        res.writeHead(200, { 'Content-Type': contentType });
-        res.end(data);
-    });
-}
+server.on('error', (err) => {
+    console.error('Server error:', err.message);
+});
 
 server.listen(PORT, HOST, () => {
-    console.log(`Server running at http://${HOST}:${PORT}/`);
+    console.log(`✅ Server running at http://${HOST}:${PORT}/`);
 });
