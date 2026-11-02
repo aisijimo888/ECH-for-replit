@@ -10,7 +10,8 @@ COUNTRY="${COUNTRY:-AM}"
 
 # ================= 工具 =================
 get_free_port() {
-    echo $(( ( RANDOM % 20000 ) + 10000 ))
+    random=$(od -An -N2 -tu2 /dev/urandom | tr -d ' ')
+    echo $(( ( random % 20000 ) + 10000 ))
 }
 
 # ================= 隧道设置（后台运行）=================
@@ -42,10 +43,13 @@ setup_tunnel() {
             ;;
     esac
 
-    curl -fsSL "$ECH_URL" -o ech-server-linux || { echo "❌ 下载 ECH 失败"; return 1; }
-    curl -fsSL "$OPERA_URL" -o opera-linux || { echo "❌ 下载 Opera 失败"; return 1; }
-    curl -fsSL "$CLOUDFLARED_URL" -o cloudflared-linux || { echo "❌ 下载 Cloudflared 失败"; return 1; }
-    chmod +x ech-server-linux opera-linux cloudflared-linux
+    curl -fsSL --retry 2 --connect-timeout 10 --max-time 120 "$ECH_URL" -o ech-server-linux || { echo "❌ 下载 ECH 失败"; return 1; }
+    if [ "$OPERA" = "1" ]; then
+        curl -fsSL --retry 2 --connect-timeout 10 --max-time 120 "$OPERA_URL" -o opera-linux || { echo "❌ 下载 Opera 失败"; return 1; }
+        chmod +x opera-linux
+    fi
+    curl -fsSL --retry 2 --connect-timeout 10 --max-time 120 "$CLOUDFLARED_URL" -o cloudflared-linux || { echo "❌ 下载 Cloudflared 失败"; return 1; }
+    chmod +x ech-server-linux cloudflared-linux
 
     # ================= 端口 =================
     WSPORT=${WSPORT:-$(get_free_port)}
@@ -96,9 +100,14 @@ setup_tunnel() {
 
     [ -n "$ARGO_DOMAIN" ] && ARGO_ARGS="$ARGO_ARGS --hostname $ARGO_DOMAIN"
 
-    nohup ./cloudflared-linux tunnel \
+    # ⭐ 关键：cloudflared 不使用 HTTP 代理，直接连接 Cloudflare
+    # 使用 env -u 清除代理环境变量，避免 i/o timeout
+    # ⭐ 注意：--url 不能加 http:// 前缀，否则 ECH WebSocket 服务器会拒绝连接
+    echo "启动 Cloudflared (清除代理环境)..."
+    env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy \
+        nohup ./cloudflared-linux tunnel \
         --url "127.0.0.1:$ECHPORT" \
-        --metrics "0.0.0.0:$ARGO_PORT" \
+        --metrics "127.0.0.1:$ARGO_PORT" \
         $ARGO_ARGS >"$CLOUDFLARED_LOG" 2>&1 &
 
     sleep 3
@@ -108,6 +117,8 @@ setup_tunnel() {
         TUNNEL_DOMAIN="$ARGO_DOMAIN"
     else
         for i in $(seq 1 30); do
+            TUNNEL_DOMAIN=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' "$CLOUDFLARED_LOG" | head -n 1)
+            [ -n "$TUNNEL_DOMAIN" ] && break
             TUNNEL_DOMAIN=$(curl -s --connect-timeout 2 --max-time 3 \
                 "http://127.0.0.1:$ARGO_PORT/metrics" \
                 | grep 'userHostname=' \
@@ -151,4 +162,5 @@ setup_tunnel &
 
 # 立即启动 Node.js（保证健康检查通过）
 echo "--- 启动 Node.js 服务器 ---"
-exec node server.js
+# 使用 pwd 获取当前工作目录（兼容 dash/sh）
+exec node "$(pwd)/server.js"
